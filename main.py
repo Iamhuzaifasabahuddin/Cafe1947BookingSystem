@@ -112,12 +112,19 @@ st.markdown("""
 
 st.markdown(
     """
-            <style>
+        <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            </style>
+            .st-emotion-cache-14vh5up{
+            visibility: hidden;
+            }
+            ._profilePreview_gzau3_63{
+            visibility: hidden;}
+            ._link_gzau3_10{
+            visibility: hidden;}
+        </style>
             """
-, unsafe_allow_html=True)
+    , unsafe_allow_html=True)
 pkt = pytz.timezone('Asia/Karachi')
 now_pkt = datetime.now(pkt)
 NOTION_API_KEY = st.secrets.get("NOTION_TOKEN", "")
