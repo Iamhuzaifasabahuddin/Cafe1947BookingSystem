@@ -202,7 +202,7 @@ def send_reservation_emails(name: str, email: str, phone: str, date: str, time: 
 
                     <p style="color: #2C2420; font-size: 15px; margin: 25px 0;">We look forward to serving you an exceptional dining experience.</p>
 
-                    <p style="color: #8B9A7B; font-size: 13px; font-style: italic; margin: 25px 0;">If you need to cancel or modify your reservation, please contact us at your earliest convenience.</p>
+                    <p style="color: #8B9A7B; font-size: 13px; font-style: italic; margin: 25px 0;">If you need to cancel or modify your reservation, please contact us on @ 0319 652 6326 / 0333 317 3698 at your earliest convenience.</p>
                 </div>
 
                 <!-- Footer -->
