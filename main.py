@@ -1,5 +1,4 @@
 import smtplib
-import time
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -10,13 +9,8 @@ from notion_client import Client
 
 st.set_page_config(page_title="Cafe Reservations", page_icon="☕", layout="centered")
 
-
 st.markdown("""
     <style>
-        /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
     
     /* Existing styling you already have */
     @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&display=swap');
@@ -116,6 +110,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.markdown(
+    """
+            <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            </style>
+            """
+, unsafe_allow_html=True)
 pkt = pytz.timezone('Asia/Karachi')
 now_pkt = datetime.now(pkt)
 NOTION_API_KEY = st.secrets.get("NOTION_TOKEN", "")
@@ -353,7 +355,6 @@ with st.form("reservation_form"):
                     customer_sent, restaurant_sent = send_reservation_emails(
                         name, email, phone, date, time_selected, guests
                     )
-
 
                 st.success(f"✅ Reservation confirmed for {name} on {date} at {time_selected}")
 
