@@ -1,4 +1,5 @@
 import smtplib
+import time
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -8,15 +9,115 @@ import streamlit as st
 from notion_client import Client
 
 st.set_page_config(page_title="Cafe Reservations", page_icon="☕", layout="centered")
+
+
 st.markdown("""
-<style>
+    <style>
+        /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
-</style>
+    footer {visibility: hidden;}
+    
+    /* Existing styling you already have */
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&display=swap');
+
+
+    html, body, [class*="stApp"] {
+        font-family: 'Cinzel Decorative', serif !important;
+        background: linear-gradient(135deg, #FBF8F3 0%, #F5EFE7 100%) !important;
+        color: #1A1A1A !important;
+    }
+
+    [data-testid="stSidebar"] {
+        background: #F5EFE7 !important;
+    }
+
+    [data-testid="stHeader"] {
+        background: transparent !important;
+    }
+
+    /* --- Button Styling --- */
+    button[kind="primary"], div[data-testid="stFormSubmitButton"] button {
+        background-color: #C17D5A !important;
+        color: white !important;
+        border: 1.5px solid #1A1A1A !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+    }
+
+    /* Hover effect: text turns white */
+    button[kind="primary"]:hover, div[data-testid="stFormSubmitButton"] button:hover {
+        background-color: #F8EFE2 !important;
+        color: #FFFFFF !important;
+    }
+    
+        /* Remove autofill blue background */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    input:-webkit-autofill:active {
+        transition: background-color 9999s ease-in-out 0s !important;
+        -webkit-text-fill-color: #1A1A1A !important;
+        box-shadow: 0 0 0px 1000px #FBF8F3 inset !important;
+        caret-color: #1A1A1A !important;
+    }
+
+    /* Apply to all text inputs for uniform look */
+    input, textarea, select {
+        background-color: #FBF8F3 !important;
+        color: #1A1A1A !important;
+        border: 1px solid vlack !important;
+        font-family: 'Cinzel Decorative', serif !important;
+        transition: all 0.3s ease !important;
+    }
+
+    /* Focus effect: subtle gold outline */
+    input:focus, textarea:focus, select:focus {
+        outline: none !important;
+        border-color: #C17D5A !important;
+        box-shadow: 0 0 5px #C8A951 !important;
+    }
+    
+     div[data-testid="stForm"] {
+        background: #F8EFE4 !important; /* soft warm ivory tone */
+        border: 1px solid #DCCFC1 !important;
+        border-radius: 15px !important;
+        padding: 2rem !important;
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05) !important;
+    }
+    
+     /* --- Selectbox specific styling (dropdown) --- */
+        div[data-baseweb="select"] > div {
+            background-color: #FBF8F3 !important;
+            color: #1A1A1A !important;
+            font-family: 'Cinzel Decorative', serif !important;
+            transition: all 0.3s ease !important;
+        }
+
+        div[data-baseweb="select"]:focus-within > div {
+            outline: 3px solid #C17D5A !important;
+            border-color: #C17D5A !important;
+            box-shadow: 0 0 5px #C8A951 !important;
+        }
+
+        div[data-baseweb="select"] svg {
+            color: #1A1A1A !important;
+        }
+
+
+    /* --- LABELS --- */
+    label, p, legend {
+        font-weight: 700 !important;
+        color: #2C2A27 !important;
+        font-family: 'Cinzel Decorative', serif !important;
+        letter-spacing: 0.5px !important;
+    }
+
+    </style>
 """, unsafe_allow_html=True)
+
 pkt = pytz.timezone('Asia/Karachi')
 now_pkt = datetime.now(pkt)
-
 NOTION_API_KEY = st.secrets.get("NOTION_TOKEN", "")
 DATABASE_ID = st.secrets.get("DATABASE_ID", "")
 
@@ -186,24 +287,46 @@ st.title("☕ Cafe Reservation System")
 st.markdown("---")
 
 st.subheader("Book a Table")
+st.caption("Fields marked with * are required")
 
 with st.form("reservation_form"):
-    name = st.text_input("Name", placeholder="Your name")
-    email = st.text_input("Email", placeholder="your@email.com")
-    phone = st.text_input("Phone Number", placeholder="03XX-XXXXXXX")
+    name = st.text_input("Name *", placeholder="Your name")
+    email = st.text_input("Email *", placeholder="your@email.com")
+    phone = st.text_input("Phone Number *", placeholder="03XX-XXXXXXX")
 
     col1, col2 = st.columns(2)
     with col1:
-        date = st.date_input("Date", min_value=datetime.now().date())
+        date = st.date_input("Date *", min_value=now_pkt.date())
     with col2:
-        time = st.selectbox("Time", [
+        all_times = [
             "1:30 PM", "2:00 PM", "2:30 PM", "3:00 PM", "3:30 PM", "4:00 PM",
             "4:30 PM", "5:00 PM", "5:30 PM", "6:00 PM", "6:30 PM", "7:00 PM",
             "7:30 PM", "8:00 PM", "8:30 PM", "9:00 PM", "9:30 PM", "10:00 PM",
             "10:30 PM", "11:00 PM"
-        ])
+        ]
 
-    guests = st.number_input("Number of Guests", min_value=1, max_value=12, value=2)
+
+        def parse_time_label(label):
+            return datetime.strptime(label, "%I:%M %p").time()
+
+
+        available_times = []
+
+        if date == now_pkt.date():
+            for t in all_times:
+                slot_time = parse_time_label(t)
+                slot_datetime = pkt.localize(datetime.combine(now_pkt.date(), slot_time))
+                if slot_datetime > now_pkt:
+                    available_times.append(t)
+        else:
+            available_times = all_times
+
+        time_selected = st.selectbox("Time *", available_times)
+        if not available_times:
+            st.warning("All time slots for today have passed. Please select a later date.")
+            available_times = all_times
+
+    guests = st.number_input("Number of Guests *", min_value=1, max_value=12, value=2)
 
     notes = st.text_area("Notes (Optional)", placeholder="Enter your notes")
     submitted = st.form_submit_button("Book Now", use_container_width=True)
@@ -221,17 +344,18 @@ with st.form("reservation_form"):
                         "Email": {"email": email},
                         "Phone": {"phone_number": phone},
                         "Date": {"date": {"start": date.isoformat()}},
-                        "Time": {"rich_text": [{"text": {"content": time}}]},
+                        "Time": {"rich_text": [{"text": {"content": time_selected}}]},
                         "Guests": {"number": guests},
                         "Notes": {"rich_text": [{"text": {"content": notes}}]}
                     }
                 )
                 with st.spinner("Sending confirmation emails..."):
                     customer_sent, restaurant_sent = send_reservation_emails(
-                        name, email, phone, date, time, guests
+                        name, email, phone, date, time_selected, guests
                     )
 
-                st.success(f"✅ Reservation confirmed for {name} on {date} at {time}")
+
+                st.success(f"✅ Reservation confirmed for {name} on {date} at {time_selected}")
 
                 if customer_sent:
                     st.info(f"📧 Confirmation email sent to {email}")
