@@ -117,13 +117,9 @@ st.markdown(
         <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
-            .st-emotion-cache-14vh5up{
-            visibility: hidden;
-            }
-            ._profilePreview_gzau3_63{
-            visibility: hidden;}
-            ._link_gzau3_10{
-            visibility: hidden;}
+            .st-emotion-cache-14vh5up {
+            ._profilePreview_gzau3_63 {visibility: hidden;}
+            ._link_gzau3_10 {visibility: hidden;}
         </style>
             """
     , unsafe_allow_html=True)
