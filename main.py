@@ -112,17 +112,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(
+hide_st_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    ._profilePreview_gzau3_63 {visibility: hidden;}
+    ._link_gzau3_10 {visibility: hidden;}
+    </style>
     """
-        <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            .st-emotion-cache-14vh5up {
-            ._profilePreview_gzau3_63 {visibility: hidden;}
-            ._link_gzau3_10 {visibility: hidden;}
-        </style>
-            """
-    , unsafe_allow_html=True)
+st.markdown(hide_st_style, unsafe_allow_html=True)
 pkt = pytz.timezone('Asia/Karachi')
 now_pkt = datetime.now(pkt)
 NOTION_API_KEY = st.secrets.get("NOTION_TOKEN", "")
