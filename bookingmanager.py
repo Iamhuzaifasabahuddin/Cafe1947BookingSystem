@@ -4,6 +4,7 @@ from datetime import datetime
 import pandas as pd
 import pytz
 import streamlit as st
+import streamlit_authenticator as stauth
 from notion_client import Client
 
 st.set_page_config(page_title="Cafe Reservations", page_icon="☕", layout="centered")
@@ -129,182 +130,202 @@ st.markdown(
 pkt = pytz.timezone('Asia/Karachi')
 now_pkt = datetime.now(pkt)
 NOTION_API_KEY = st.secrets.get("NOTION_TOKEN", "")
-DATABASE_ID = st.secrets.get("DATABASE_ID", "")
 DATASOURCE_ID = st.secrets.get("DATASOURCE_ID", "")
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "")
-if NOTION_API_KEY and DATABASE_ID:
+if NOTION_API_KEY and DATASOURCE_ID:
     notion = Client(auth=NOTION_API_KEY)
 else:
     st.error("⚠️ Please configure Notion API credentials in secrets")
     st.stop()
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+config = {
+    'credentials': {
+        'usernames': {}
+    },
+    'cookie': {
+        'name': st.secrets.get("cookie_name", "Booking_manager_cookie"),
+        'key': st.secrets.get("cookie_key", "some_signature_key"),
+        'expiry_days': st.secrets.get("cookie_expiry_days", 30)
+    }
+}
 
-if not st.session_state.authenticated:
-    st.title("🔑 Cafe 1947 Booking System Login")
-    password = st.text_input("Enter Password", type="password")
-    if st.button("Login"):
-        if password == APP_PASSWORD:
-            st.session_state.authenticated = True
-            st.success("Login successful! 🎉")
-            time.sleep(2)
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
+for key in st.secrets:
+    if key.startswith("auth_username_"):
+        username = st.secrets[key]
+        suffix = key.replace("auth_username_", "")
+        config['credentials']['usernames'][username] = {
+            'name': st.secrets.get(f"auth_name_{suffix}", username),
+            'email': st.secrets.get(f"auth_email_{suffix}", f"{username}@example.com"),
+            'password': st.secrets.get(f"auth_password_{suffix}", "")
+        }
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
+)
+if st.session_state.get('authentication_status') is None:
+    st.title("🔑 Cafe1947 Booking Manager Login")
+
+authenticator.login()
+
+if st.session_state.get('authentication_status') is True:
+    st.title("☕ Cafe Reservation System Manager")
+    @st.cache_data(ttl=120)
+    def get_bookings():
+        rides = []
+        has_more = True
+        start_cursor = None
+
+        while has_more:
+
+            if start_cursor:
+                data = notion.data_sources.query(
+                    data_source_id=DATASOURCE_ID,
+                    start_cursor=start_cursor
+                )
+            else:
+                data = notion.data_sources.query(data_source_id=DATASOURCE_ID)
+
+            for row in data["results"]:
+                props = row.get("properties", {})
+
+                name = (
+                    props.get("Name", {}).get("title", [{}])[0].get("plain_text", "")
+                    if props.get("Name", {}).get("title")
+                    else ""
+                )
+                email = props.get("Email", {}).get("email", "")
+                phone = props.get("Phone", {}).get("phone_number", "")
+                date = props.get("Date", {}).get("date", {}).get("start", "")
+                time = (
+                    props.get("Time", {}).get("rich_text", [{}])[0].get("plain_text", "")
+                    if props.get("Time", {}).get("rich_text")
+                    else ""
+                )
+                guests = props.get("Guests", {}).get("number", "")
+                notes = (
+                    props.get("Notes", {}).get("rich_text", [{}])[0].get("plain_text", "")
+                    if props.get("Notes", {}).get("rich_text")
+                    else ""
+                )
+
+                rides.append({
+                    "Name": name,
+                    "Email": email,
+                    "Phone": phone,
+                    "Date": date,
+                    "Time": time,
+                    "Guests": guests,
+                    "Notes": notes
+                })
+
+            has_more = data.get("has_more", False)
+            start_cursor = data.get("next_cursor")
+
+        return rides
+
+
+    bookings = get_bookings()
+    authenticator.logout()
+    if st.button("🔃 Fetch Latest"):
+        st.cache_data.clear()
+    if bookings:
+        booking_df = pd.DataFrame(bookings)
+        booking_df["Date"] = pd.to_datetime(booking_df["Date"], errors="coerce")
+        booking_df["month"] = booking_df["Date"].dt.strftime("%B")
+        booking_df["year"] = booking_df["Date"].dt.year
+        booking_df = booking_df.sort_values(by="Date", ascending=True)
+        booking_df["Date"] = booking_df["Date"].dt.strftime("%d-%B-%Y")
+        booking_df.index = range(1, len(booking_df) + 1)
+
+        unique_years = sorted(booking_df["year"].dropna().unique(), reverse=True)
+        unique_months = sorted(booking_df["month"].dropna().unique())
+
+        current_month = datetime.now(pkt).strftime("%B")
+        current_year = datetime.now(pkt).year
+
+        view = st.radio(
+            "Select View",
+            ["📅 By Month", "📋 All Data", "📊 Summary", "❌ Delete"],
+            horizontal=True
+        )
+
+        if view == "📋 All Data":
+            st.subheader("All Booking Data")
+            st.dataframe(booking_df)
+
+        elif view == "📅 By Month":
+            st.subheader("Filter by Month and Year")
+
+            months = ["All"] + unique_months
+            default_month_idx = unique_months.index(current_month) + 1 if current_month in unique_months else 0
+            selected_month = st.selectbox("Select Month", months, index=default_month_idx)
+
+            selected_year = st.number_input("Select Year", value=current_year, min_value=2025, max_value=current_year)
+
+            if selected_month == "All":
+                filtered_df = booking_df[booking_df["year"] == selected_year]
+            else:
+                filtered_df = booking_df[
+                    (booking_df["year"] == selected_year) & (booking_df["month"] == selected_month)]
+
+            st.write(filtered_df)
+
+            total_guests = filtered_df["Guests"].sum() if not filtered_df.empty else 0
+            avg_guests = filtered_df["Guests"].mean() if not filtered_df.empty else 0
+
+            st.metric("👥 Total Guests", f"{total_guests}")
+            st.metric("👤 Average Guests per Booking", f"{avg_guests:.2f}")
+
+        elif view == "📊 Summary":
+            st.subheader("Overall Summary")
+            total_guests = booking_df["Guests"].sum()
+            avg_guests = booking_df["Guests"].mean()
+
+            st.metric("👥 Total Guests (All Time)", f"{total_guests}")
+            st.metric("👤 Average Guests per Booking", f"{avg_guests:.2f}")
+
+            month_totals = booking_df.groupby(["year", "month"])["Guests"].sum().reset_index()
+            st.bar_chart(month_totals.set_index("month"))
+
+        elif view == "❌ Delete":
+            st.subheader("Delete Bookings by Month/Year")
+
+            months = ["All"] + unique_months
+            default_month_idx = unique_months.index(current_month) + 1 if current_month in unique_months else 0
+            selected_month = st.selectbox("Select Month", months, index=default_month_idx, key="delete_box")
+            selected_year = st.number_input("Select Year", value=current_year, min_value=2025, max_value=current_year)
+
+            booking_df["Date_dt"] = pd.to_datetime(booking_df["Date"], errors="coerce")
+            if selected_month == "All":
+                filtered_df = booking_df[booking_df["year"] == selected_year]
+            else:
+                filtered_df = booking_df[
+                    (booking_df["year"] == selected_year) & (booking_df["month"] == selected_month)]
+
+            if filtered_df.empty:
+                st.info("No bookings found for the selected filters.")
+            else:
+                for idx, (_, booking) in enumerate(filtered_df.iterrows(), start=1):
+                    with st.expander(
+                            f"{booking['Date']} @ {booking['Time']} | {booking['Guests']} Guests | {booking['Name']} | {booking["Email"]}"):
+                        if st.button("🗑 Delete Booking", key=f"delete_{idx}"):
+                            try:
+
+                                st.success(f"Deleted booking from {booking['Date']} @ {booking['Time']}")
+                                st.cache_data.clear()
+                                time.sleep(1)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error deleting booking: {e}")
+
+    else:
+        st.info("❌ No bookings recorded yet.")
+elif st.session_state.get('authentication_status') is False:
+    st.error('Username/password is incorrect')
     st.stop()
-
-
-@st.cache_data(ttl=120)
-def get_bookings():
-    rides = []
-    has_more = True
-    start_cursor = None
-
-    while has_more:
-        # Fetch data from Notion (using pagination if needed)
-        if start_cursor:
-            data = notion.data_sources.query(
-                data_source_id=DATASOURCE_ID,
-                start_cursor=start_cursor
-            )
-        else:
-            data = notion.data_sources.query(data_source_id=DATASOURCE_ID)
-
-        for row in data["results"]:
-            props = row.get("properties", {})
-
-            name = (
-                props.get("Name", {}).get("title", [{}])[0].get("plain_text", "")
-                if props.get("Name", {}).get("title")
-                else ""
-            )
-            email = props.get("Email", {}).get("email", "")
-            phone = props.get("Phone", {}).get("phone_number", "")
-            date = props.get("Date", {}).get("date", {}).get("start", "")
-            time = (
-                props.get("Time", {}).get("rich_text", [{}])[0].get("plain_text", "")
-                if props.get("Time", {}).get("rich_text")
-                else ""
-            )
-            guests = props.get("Guests", {}).get("number", "")
-            notes = (
-                props.get("Notes", {}).get("rich_text", [{}])[0].get("plain_text", "")
-                if props.get("Notes", {}).get("rich_text")
-                else ""
-            )
-
-            rides.append({
-                "Name": name,
-                "Email": email,
-                "Phone": phone,
-                "Date": date,
-                "Time": time,
-                "Guests": guests,
-                "Notes": notes
-            })
-
-        has_more = data.get("has_more", False)
-        start_cursor = data.get("next_cursor")
-
-    return rides
-
-
-bookings = get_bookings()
-
-if bookings:
-    booking_df = pd.DataFrame(bookings)
-    booking_df["Date"] = pd.to_datetime(booking_df["Date"], errors="coerce")
-    booking_df["month"] = booking_df["Date"].dt.strftime("%B")
-    booking_df["year"] = booking_df["Date"].dt.year
-    booking_df = booking_df.sort_values(by="Date", ascending=True)
-    booking_df["Date"] = booking_df["Date"].dt.strftime("%d-%B-%Y")
-    booking_df.index = range(1, len(booking_df) + 1)
-
-    unique_years = sorted(booking_df["year"].dropna().unique(), reverse=True)
-    unique_months = sorted(booking_df["month"].dropna().unique())
-
-    current_month = datetime.now(pkt).strftime("%B")
-    current_year = datetime.now(pkt).year
-
-    view = st.radio(
-        "Select View",
-        ["📅 By Month", "📋 All Data", "📊 Summary", "❌ Delete"],
-        horizontal=True
-    )
-
-    if view == "📋 All Data":
-        st.subheader("All Booking Data")
-        st.dataframe(booking_df)
-
-    elif view == "📅 By Month":
-        st.subheader("Filter by Month and Year")
-
-        months = ["All"] + unique_months
-        default_month_idx = unique_months.index(current_month) + 1 if current_month in unique_months else 0
-        selected_month = st.selectbox("Select Month", months, index=default_month_idx)
-
-        selected_year = st.number_input("Select Year", value=current_year, min_value=2025, max_value=current_year)
-
-        if selected_month == "All":
-            filtered_df = booking_df[booking_df["year"] == selected_year]
-        else:
-            filtered_df = booking_df[(booking_df["year"] == selected_year) & (booking_df["month"] == selected_month)]
-
-        st.write(filtered_df)
-
-        total_guests = filtered_df["Guests"].sum() if not filtered_df.empty else 0
-        avg_guests = filtered_df["Guests"].mean() if not filtered_df.empty else 0
-
-        st.metric("👥 Total Guests", f"{total_guests}")
-        st.metric("👤 Average Guests per Booking", f"{avg_guests:.2f}")
-
-    elif view == "📊 Summary":
-        st.subheader("Overall Summary")
-        total_guests = booking_df["Guests"].sum()
-        avg_guests = booking_df["Guests"].mean()
-
-        st.metric("👥 Total Guests (All Time)", f"{total_guests}")
-        st.metric("👤 Average Guests per Booking", f"{avg_guests:.2f}")
-
-        month_totals = booking_df.groupby(["year", "month"])["Guests"].sum().reset_index()
-        st.bar_chart(month_totals.set_index("month"))
-
-    elif view == "❌ Delete":
-        st.subheader("Delete Bookings by Month/Year")
-
-        months = ["All"] + unique_months
-        default_month_idx = unique_months.index(current_month) + 1 if current_month in unique_months else 0
-        selected_month = st.selectbox("Select Month", months, index=default_month_idx, key="delete_box")
-        selected_year = st.number_input("Select Year", value=current_year, min_value=2025, max_value=current_year)
-
-        booking_df["Date_dt"] = pd.to_datetime(booking_df["Date"], errors="coerce")
-        if selected_month == "All":
-            filtered_df = booking_df[booking_df["year"] == selected_year]
-        else:
-            filtered_df = booking_df[(booking_df["year"] == selected_year) & (booking_df["month"] == selected_month)]
-
-        if filtered_df.empty:
-            st.info("No bookings found for the selected filters.")
-        else:
-            for idx, (_, booking) in enumerate(filtered_df.iterrows(), start=1):
-                with st.expander(
-                        f"{booking['Date']} @ {booking['Time']} | {booking['Guests']} Guests | {booking['Name']} | {booking["Email"]}"):
-                    if st.button("🗑 Delete Booking", key=f"delete_{idx}"):
-                        try:
-
-                            st.success(f"Deleted booking from {booking['Date']} @ {booking['Time']}")
-                            st.cache_data.clear()
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error deleting booking: {e}")
-
-    if st.button("🚪 Logout"):
-        st.session_state.authenticated = False
-        st.success("Logged out successfully! 👋")
-        time.sleep(2)
-        st.rerun()
-
-else:
-    st.info("❌ No bookings recorded yet.")
+elif st.session_state.get('authentication_status') is None:
+    st.warning('Please enter your username and password')
+    st.stop()

@@ -124,14 +124,14 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 pkt = pytz.timezone('Asia/Karachi')
 now_pkt = datetime.now(pkt)
 NOTION_API_KEY = st.secrets.get("NOTION_TOKEN", "")
-DATABASE_ID = st.secrets.get("DATABASE_ID", "")
+DATASOURCE_ID = st.secrets.get("DATASOURCE_ID", "")
 
 SMTP_SERVER = st.secrets.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = st.secrets.get("SMTP_PORT", 587)
 RESTAURANT_EMAIL = st.secrets.get("SENDER_EMAIL", "")
 RESTAURANT_PWD = st.secrets.get("SENDER_PASSWORD", "")
 
-if NOTION_API_KEY and DATABASE_ID:
+if NOTION_API_KEY and DATASOURCE_ID:
     notion = Client(auth=NOTION_API_KEY)
 else:
     st.error("⚠️ Please configure Notion API credentials in secrets")
@@ -342,7 +342,7 @@ with st.form("reservation_form"):
             try:
                 notes = notes.strip() if notes else ""
                 notion.pages.create(
-                    parent={"database_id": DATABASE_ID},
+                    parent={"data_source_id": DATASOURCE_ID},
                     properties={
                         "Name": {"title": [{"text": {"content": name.title()}}]},
                         "Email": {"email": email},
